@@ -47,11 +47,13 @@ startRedis();
 
 const {
   usersRoute,
-  postsRoute
+  postsRoute,
+  commentVoteRoute
 } = initializeRoutes(db, redisClient);
 
 app.use(usersRoute.createRouter());
 app.use(postsRoute.createRouter());
+app.use(commentVoteRoute.createRouter());
 
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });

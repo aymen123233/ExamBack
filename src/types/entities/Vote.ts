@@ -1,8 +1,7 @@
 export interface Vote {
-  id?: string;
-  entityId: string; // Post or Comment ID
-  entityType: 'post' | 'comment';
   userId: string;
+  targetId: string;
+  targetType: 'post' | 'comment';
   voteType: 'upvote' | 'downvote';
-  createdAt?: Date;
+  createdAt?: FirebaseFirestore.Timestamp; // Add optional createdAt
 }

@@ -3,7 +3,6 @@ import { FirestoreCollections } from '../types/firestore';
 import { IResBody } from '../types/api';
 import { firestoreTimestamp } from '../utils/firestore-helpers';
 import { Timestamp } from 'firebase/firestore';
-import { categories } from '../constants/categories';
 
 export class PostsService {
   private db: FirestoreCollections;
@@ -24,6 +23,7 @@ export class PostsService {
     return {
       status: 201,
       message: 'Post created successfully!',
+      data: { id: postRef.id, ...postData }
     };
   }
 
@@ -47,144 +47,114 @@ export class PostsService {
     };
   }
 
-  async getCategories(): Promise<IResBody> {
-    return {
-      status: 200,
-      message: 'Categories retrieved successfully!',
-      data: categories
-    };
-  }
-
-  async addCommentToPost(commentData: any, postId: string): Promise<IResBody> {
-    // logic to add comment
-    return {
-      status: 200,
-      message: 'Comment added successfully!',
-      data: categories
-    };
-  }
-
   async getPostById(postId: string): Promise<IResBody> {
     const postDoc = await this.db.posts.doc(postId).get();
+
     if (!postDoc.exists) {
       return { status: 404, message: 'Post not found' };
     }
 
-    return {
-      status: 200,
-      message: 'Post retrieved successfully!',
-      data: postDoc.data()
-    };
+    return { status: 200, message: 'Post retrieved successfully!', data: { id: postId, ...postDoc.data() } };
   }
 
-  async updatePost(postId: string, postData: any): Promise<IResBody> {
-    const postRef = this.db.posts.doc(postId);
-    const postDoc = await postRef.get();
+  async updatePost(postId: string, userId: string, postData: Partial<Post>): Promise<IResBody> {
+    const postDoc = await this.db.posts.doc(postId).get();
+
     if (!postDoc.exists) {
       return { status: 404, message: 'Post not found' };
     }
 
-    await postRef.update({
+    if (postDoc.data()?.createdBy !== userId) {
+      return { status: 403, message: 'Forbidden: You are not the owner of this post' };
+    }
+
+    await this.db.posts.doc(postId).update({
       ...postData,
-      updatedAt: firestoreTimestamp.now()
+      updatedAt: firestoreTimestamp.now(),
     });
 
-    return { status: 200, message: 'Post updated successfully!' };
+    return { status: 200, message: 'Post updated successfully!', data: { id: postId, ...postData } };
   }
 
-  async deletePost(postId: string): Promise<IResBody> {
-    const postRef = this.db.posts.doc(postId);
-    const postDoc = await postRef.get();
+  async deletePost(postId: string, userId: string): Promise<IResBody> {
+    const postDoc = await this.db.posts.doc(postId).get();
+
     if (!postDoc.exists) {
       return { status: 404, message: 'Post not found' };
     }
 
-    await postRef.delete();
+    if (postDoc.data()?.createdBy !== userId) {
+      return { status: 403, message: 'Forbidden: You are not the owner of this post' };
+    }
+
+    await this.db.posts.doc(postId).delete();
+
     return { status: 200, message: 'Post deleted successfully!' };
   }
 
-  async getPostsByUser(userId: string): Promise<IResBody> {
-    const posts: any[] = [];
+  async getAllPostsByUser(userId: string): Promise<IResBody> {
     const postsQuerySnapshot = await this.db.posts.where('createdBy', '==', userId).get();
+    const posts = postsQuerySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: (doc.data()?.createdAt as Timestamp)?.toDate(),
+      updatedAt: (doc.data()?.updatedAt as Timestamp)?.toDate(),
+    }));
 
-    postsQuerySnapshot.forEach((doc) => {
-      posts.push({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: (doc.data()?.createdAt as Timestamp)?.toDate(),
-        updatedAt: (doc.data()?.updatedAt as Timestamp)?.toDate(),
-      });
-    });
-
-    return {
-      status: 200,
-      message: 'Posts retrieved successfully!',
-      data: posts
-    };
+    return { status: 200, message: 'Posts retrieved successfully!', data: posts };
   }
 
   async getPostsByCategory(category: string): Promise<IResBody> {
-    const posts: any[] = [];
-    const postsQuerySnapshot = await this.db.posts.where('categories', 'array-contains', category).get();
+    const postsQuerySnapshot = await this.db.posts.where('categories', 'array-contains', category.toLowerCase()).get();
+    const posts = postsQuerySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: (doc.data()?.createdAt as Timestamp)?.toDate(),
+      updatedAt: (doc.data()?.updatedAt as Timestamp)?.toDate(),
+    }));
 
-    postsQuerySnapshot.forEach((doc) => {
-      posts.push({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: (doc.data()?.createdAt as Timestamp)?.toDate(),
-        updatedAt: (doc.data()?.updatedAt as Timestamp)?.toDate(),
-      });
-    });
+    return { status: 200, message: 'Posts retrieved successfully!', data: posts };
+  }
+
+  async search(query: string, type: string): Promise<IResBody> {
+    const collection = this.db[type === 'post' ? 'posts' : type === 'comment' ? 'comments' : 'users'];
+    const results = await collection.where('content', 'array-contains', query).get();
 
     return {
       status: 200,
-      message: 'Posts by category retrieved successfully!',
-      data: posts
+      message: 'Search results retrieved successfully!',
+      data: results.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     };
   }
-
-  async voteOnPost(postId: string, vote: 'upvote' | 'downvote'): Promise<IResBody> {
-    const postRef = this.db.posts.doc(postId);
-    const postDoc = await postRef.get();
-
-    if (!postDoc.exists) {
-      return { status: 404, message: 'Post not found' };
-    }
-
-    const currentVoteCount = postDoc.data()?.voteCount || 0;
-    const newVoteCount = vote === 'upvote' ? currentVoteCount + 1 : currentVoteCount - 1;
-
-    await postRef.update({ voteCount: newVoteCount });
-
-    return {
-      status: 200,
-      message: 'Vote registered successfully',
-      data: { voteCount: newVoteCount },
-    };
-  }
-
 
   async getTrendingPosts(): Promise<IResBody> {
-    const posts: Post[] = [];
-    const postsQuerySnapshot = await this.db.posts
-      .orderBy('voteCount', 'desc') // Sort by highest vote count
-      .limit(10) // Limit to top 10 posts
-      .get();
-
-    postsQuerySnapshot.forEach((doc) => {
-      posts.push({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: (doc.data()?.createdAt as Timestamp)?.toDate(),
-        updatedAt: (doc.data()?.updatedAt as Timestamp)?.toDate(),
-      });
-    });
-
+    const posts = await this.db.posts.orderBy('upvotes', 'desc').limit(10).get();
     return {
       status: 200,
       message: 'Trending posts retrieved successfully!',
-      data: posts,
+      data: posts.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     };
   }
+
+  async getFilteredPosts(category: string, sortBy: string): Promise<IResBody> {
+    let query: FirebaseFirestore.Query<Post>; // Declare the query type explicitly
+    query = this.db.posts; // Initialize with the collection reference
+
+    if (category) {
+      query = query.where('category', '==', category); // Apply filter
+    }
+    if (sortBy) {
+      query = query.orderBy(sortBy); // Apply sorting
+    }
+
+    const postsQuerySnapshot = await query.get(); // Execute the query
+    return {
+      status: 200,
+      message: 'Filtered posts retrieved successfully!',
+      data: postsQuerySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+    };
+  }
+
+
 
 }

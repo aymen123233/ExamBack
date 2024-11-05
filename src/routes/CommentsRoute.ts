@@ -1,28 +1,37 @@
 import { Router } from 'express';
-import { CommentsController } from '../controllers/CommentsController';
-import { CommentsService } from '../services/CommentsService';
+import { VoteController } from '../controllers/VoteController';
 import authJwt from '../middlewares/authJwt';
-import { checkRole } from '../middlewares/authJwt';
-import { db } from '../utils/firestore-helpers';
+import { CommentController } from '../controllers';
 
-const commentsService = new CommentsService(db);
-const commentsController = new CommentsController(commentsService);
+export class CommentsVoteRoutes {
+  private commentController: CommentController;
+  private voteController: VoteController;
 
-const router = Router();
+  constructor(commentController: CommentController, voteController: VoteController) {
+    this.commentController = commentController;
+    this.voteController = voteController;
+  }
 
-// Route: Get all comments of a post (Accessible to everyone, including guests)
-router.get('/posts/:postId/comments', commentsController.getCommentsByPost.bind(commentsController));
+  createRouter(): Router {
+    const router = Router();
 
-// Route: Get a comment by ID (Accessible to everyone, including guests)
-router.get('/comments/:id', commentsController.getCommentById.bind(commentsController));
 
-// Route: Add a comment to a post (Accessible to connected users only)
-router.post('/posts/:postId/comments', authJwt.verifyToken, commentsController.addComment.bind(commentsController));
+    router.get('/posts/:postId/comments', this.commentController.getCommentsByPostId.bind(this.commentController));
+    router.get('/comments/:id', this.commentController.getCommentsByPostId.bind(this.commentController));
+    router.post('/posts/:postId/comments', authJwt.verifyToken, this.commentController.addComment.bind(this.commentController));
+    router.put('/comments/:id', authJwt.verifyToken, this.commentController.updateComment.bind(this.commentController));
+    router.delete('/comments/:id', authJwt.verifyToken, this.commentController.deleteComment.bind(this.commentController));
+    router.get('/comments', authJwt.verifyToken, this.commentController.getAllComments.bind(this.commentController));
 
-// Route: Update a comment (Accessible to admin or comment owner only)
-router.put('/comments/:id', authJwt.verifyToken, checkRole('admin'), commentsController.updateComment.bind(commentsController));
 
-// Route: Delete a comment (Accessible to admin or comment owner only)
-router.delete('/comments/:id', authJwt.verifyToken, checkRole('admin'), commentsController.deleteComment.bind(commentsController));
+    // Routes pour les votes
+    router.post('/posts/:id/vote', authJwt.verifyToken, this.voteController.vote.bind(this.voteController));
+    router.post('/comments/:id/vote', authJwt.verifyToken, this.voteController.vote.bind(this.voteController));
 
-export default router;
+
+    // router.get('/comments/top', this.commentController.getTopComments.bind(this.commentController));
+
+
+    return router;
+  }
+}

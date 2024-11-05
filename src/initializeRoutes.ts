@@ -5,22 +5,26 @@ import { FirestoreCollections } from './types/firestore';
 import { RedisClientType } from 'redis';
 
 export function initializeRoutes(db: FirestoreCollections, redisClient: RedisClientType) {
-  // Initialize Users Service and Controller
   const usersService = new services.UsersService(db, redisClient);
   const userController = new controllers.UserController(usersService);
   const usersRoute = new routes.UsersRoute(userController);
 
-  // Initialize Posts Service, Comments Service, and their Controllers
   const postsService = new services.PostsService(db);
-  const commentsService = new services.CommentsService(db);
   const postsController = new controllers.PostsController(postsService);
-  const commentsController = new controllers.CommentsController(commentsService);
+  const postsRoute = new routes.PostsRoute(postsController);
 
-  // Pass both controllers to PostsRoute
-  const postsRoute = new routes.PostsRoute(postsController, commentsController);
+  const commentService = new services.CommentsService(db);
+  const commentController = new controllers.CommentController(commentService);
+
+  const voteService = new services.VotesService(db);
+  const voteController = new controllers.VoteController(voteService);
+
+  const commentVoteRoute = new routes.CommentsVoteRoutes(commentController, voteController);
 
   return {
-    usersRoute,
-    postsRoute,
+      usersRoute,
+      postsRoute,
+      commentVoteRoute
   };
 }
+
