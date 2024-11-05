@@ -39,8 +39,22 @@ const verifyToken = (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+const checkRole = (role: string) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.userRole !== role) {
+      return res.status(403).json({
+        status: 403,
+        message: 'Forbidden: insufficient permissions',
+      });
+    }
+    next();
+  };
+};
+
 const authJwt = {
   verifyToken,
 };
+
+export { checkRole };
 
 export default authJwt;

@@ -6,6 +6,7 @@ import {comparePasswords, encryptPassword} from '../utils/password';
 import { formatUserData } from '../utils/formatData';
 import { generateToken } from '../utils/jwt';
 import { RedisClientType } from 'redis';
+import { Timestamp } from 'firebase/firestore';
 
 export class UsersService {
   private db: FirestoreCollections;
@@ -126,4 +127,219 @@ export class UsersService {
       }
     };
   }
+
+  // Méthode pour mettre à jour un utilisateur
+  async updateUser(userId: string, updates: Partial<User>): Promise<IResBody> {
+    const userRef = this.db.users.doc(userId);
+
+    try {
+      await userRef.update({
+        ...updates,
+        updatedAt: firestoreTimestamp.now(),
+      });
+
+      const updatedUserDoc = await userRef.get();
+      const formattedUser = formatUserData(updatedUserDoc.data());
+
+      return {
+        status: 200,
+        message: 'User updated successfully!',
+        data: { id: userId, ...formattedUser }
+      };
+    } catch (error) {
+      return {
+        status: 500,
+        message: 'Failed to update user.',
+        data: error
+      };
+    }
+  }
+
+  // Méthode pour supprimer un utilisateur
+  async deleteUser(userId: string): Promise<IResBody> {
+    const userRef = this.db.users.doc(userId);
+
+    try {
+      await userRef.delete();
+      await this.redisClient.del('users'); // Invalidate cache for users list
+
+      return {
+        status: 200,
+        message: 'User deleted successfully!',
+      };
+    } catch (error) {
+      return {
+        status: 500,
+        message: 'Failed to delete user.',
+        data: error
+      };
+    }
+  }
+
+  // Méthode pour changer le mot de passe
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<IResBody> {
+    const userRef = this.db.users.doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return {
+        status: 404,
+        message: 'User not found.',
+      };
+    }
+
+    const userData = userDoc.data() as User;
+
+    // Vérifier si le mot de passe existe dans les données utilisateur
+    if (!userData.password) {
+      return {
+        status: 500,
+        message: 'User password is not set.',
+      };
+    }
+
+    const isPasswordValid = comparePasswords(currentPassword, userData.password);
+
+    if (!isPasswordValid) {
+      return {
+        status: 401,
+        message: 'Current password is incorrect.',
+      };
+    }
+
+    try {
+      await userRef.update({
+        password: encryptPassword(newPassword),
+        updatedAt: firestoreTimestamp.now(),
+      });
+
+      return {
+        status: 200,
+        message: 'Password changed successfully!',
+      };
+    } catch (error) {
+      return {
+        status: 500,
+        message: 'Failed to change password.',
+        data: error
+      };
+    }
+  }
+
+  async getUserActivity(userId: string): Promise<IResBody> {
+    try {
+      const posts: any[] = [];
+      const comments: any[] = [];
+
+      // Fetch posts created by the user
+      const postsQuerySnapshot = await this.db.posts.where('createdBy', '==', userId).get();
+      postsQuerySnapshot.forEach((doc) => {
+        posts.push({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: (doc.data().createdAt as Timestamp)?.toDate(),
+          updatedAt: (doc.data().updatedAt as Timestamp)?.toDate(),
+        });
+      });
+
+      // Fetch comments created by the user
+      const commentsQuerySnapshot = await this.db.comments.where('createdBy', '==', userId).get();
+      commentsQuerySnapshot.forEach((doc) => {
+        comments.push({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: (doc.data().createdAt as Timestamp)?.toDate(),
+          updatedAt: (doc.data().updatedAt as Timestamp)?.toDate(),
+        });
+      });
+
+      return {
+        status: 200,
+        message: 'User activity retrieved successfully!',
+        data: {
+          posts,
+          comments,
+        },
+      };
+    } catch (error) {
+      return {
+        status: 500,
+        message: 'Failed to retrieve user activity.',
+        data: error,
+      };
+    }
+  }
+
+  async search(keyword: string): Promise<IResBody> {
+    try {
+      const users: any[] = [];
+      const posts: any[] = [];
+      const comments: any[] = [];
+
+      // Search users by username or email
+      const usersQuerySnapshot = await this.db.users
+        .where('username', '>=', keyword)
+        .where('username', '<=', keyword + '\uf8ff')
+        .get();
+
+      usersQuerySnapshot.forEach((doc) => {
+        users.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+
+      // Search posts by title or description
+      const postsQuerySnapshot = await this.db.posts
+        .where('title', '>=', keyword)
+        .where('title', '<=', keyword + '\uf8ff')
+        .get();
+
+      postsQuerySnapshot.forEach((doc) => {
+        posts.push({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: (doc.data().createdAt as Timestamp)?.toDate(),
+          updatedAt: (doc.data().updatedAt as Timestamp)?.toDate(),
+        });
+      });
+
+      // Search comments by description
+      const commentsQuerySnapshot = await this.db.comments
+        .where('description', '>=', keyword)
+        .where('description', '<=', keyword + '\uf8ff')
+        .get();
+
+      commentsQuerySnapshot.forEach((doc) => {
+        comments.push({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: (doc.data().createdAt as Timestamp)?.toDate(),
+          updatedAt: (doc.data().updatedAt as Timestamp)?.toDate(),
+        });
+      });
+
+      return {
+        status: 200,
+        message: 'Search results retrieved successfully!',
+        data: {
+          users,
+          posts,
+          comments,
+        },
+      };
+    } catch (error) {
+      return {
+        status: 500,
+        message: 'Failed to perform search.',
+        data: error,
+      };
+    }
+  }
+
+
+
+
+
+
 }
